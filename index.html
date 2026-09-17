@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>クロンダイク・ソリティア</title>
 <style>
   :root{
@@ -248,6 +249,7 @@
     font-size:13px;
     font-weight:bold;
     font-family:"Times New Roman",serif;
+    touch-action:none;
   }
   .card.back{
     background:
@@ -771,27 +773,32 @@ let dragThreshold = 4;
 // 実際にドラッグ（移動）されなかった場合は、通常のクリック操作として扱う。
 function makeDraggable(cardEl, source){
   cardEl.style.cursor = 'grab';
-  cardEl.onmousedown = (e)=>{
+  cardEl.onpointerdown = (e)=>{
     if(autoRunning) return;
-    if(e.button!==0) return; // 左クリックのみ
+    if(dragCtx) return;
+    if(e.pointerType==='mouse' && e.button!==0) return; // マウスは左クリックのみ
     e.preventDefault();
     const cards = getDragCards(source);
     if(!cards.length) return;
     const rect = cardEl.getBoundingClientRect();
     dragCtx = {
       source, cards,
+      pointerId:e.pointerId,
       startX:e.clientX, startY:e.clientY,
       offsetX:e.clientX-rect.left, offsetY:e.clientY-rect.top,
       originLeft:rect.left, originTop:rect.top,
       moved:false, ghostEl:null
     };
-    document.addEventListener('mousemove', onDragMove);
-    document.addEventListener('mouseup', onDragEnd);
+    cardEl.setPointerCapture?.(e.pointerId);
+    document.addEventListener('pointermove', onDragMove, {passive:false});
+    document.addEventListener('pointerup', onDragEnd);
+    document.addEventListener('pointercancel', onDragCancel);
   };
 }
 
 function onDragMove(e){
-  if(!dragCtx) return;
+  if(!dragCtx || e.pointerId!==dragCtx.pointerId) return;
+  e.preventDefault();
   const dx=e.clientX-dragCtx.startX, dy=e.clientY-dragCtx.startY;
   if(!dragCtx.moved){
     if(Math.hypot(dx,dy) < dragThreshold) return;
@@ -860,9 +867,8 @@ function dispatchClickForSource(source){
 }
 
 function onDragEnd(e){
-  document.removeEventListener('mousemove', onDragMove);
-  document.removeEventListener('mouseup', onDragEnd);
-  if(!dragCtx) return;
+  if(!dragCtx || e.pointerId!==dragCtx.pointerId) return;
+  removeDragListeners();
   const wasDragging = dragCtx.moved;
   const source = dragCtx.source;
   if(dragCtx.ghostEl) dragCtx.ghostEl.remove();
@@ -889,6 +895,21 @@ function onDragEnd(e){
     dispatchClickForSource(source);
   }
   dragCtx = null;
+}
+
+function onDragCancel(e){
+  if(!dragCtx || e.pointerId!==dragCtx.pointerId) return;
+  removeDragListeners();
+  if(dragCtx.ghostEl) dragCtx.ghostEl.remove();
+  dragCtx=null;
+  clearSelection();
+  render();
+}
+
+function removeDragListeners(){
+  document.removeEventListener('pointermove', onDragMove);
+  document.removeEventListener('pointerup', onDragEnd);
+  document.removeEventListener('pointercancel', onDragCancel);
 }
 
 function getDragCards(source){
